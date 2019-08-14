@@ -16,6 +16,7 @@ in mysql...
 
 ```sql
 mysql> create user lrngsql@localhost identified by 'xxxxx';
+mysql> grant all on *.* to lrngsql@localhost;
 mysql> quit;
 ```
 
