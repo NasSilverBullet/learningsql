@@ -160,3 +160,166 @@ from account a
 where not exists (select 1
 from business b
 where b.cust_id = a.cust_id);
+
+/* updete */
+update account a
+set a.last_activity_date =
+  (select max(t.txn_date)
+  from transaction t
+  where t.account_id = a.account_id);
+
+/* null で上書くことを防止 */
+update account a
+set a.last_activity_date =
+  (select max(t.txn_date)
+  from transaction t
+  where t.account_id = a.account_id)
+where exists (select 1 -- ここで防止している
+  from transaction t
+  where t.account_id = a.account_id);
+
+/* delete 存在しなかったら */
+delete from department
+where not exists (select 1
+  from employee
+  where employee.dept_id = department.dept_id);
+
+/* delete相関サブクエリでもエイリアス使える... */
+delete from department d
+where not exists (select 1
+  from employee e
+  where e.dept_id = d.dept_id);
+
+# 9.5 サブクエリを使用する状況
+
+/* データソースとしてのサブクエリ */
+select d.dept_id, d.name, e_cnt.how_many num_employees
+from department d inner join
+(select dept_id, count(*) how_many
+from employee
+group by dept_id) e_cnt
+on d.dept_id = e_cnt.dept_id;
+
+/* サブクエリが生成するテーブル */
+select dept_id, count(*) how_many
+from employee
+group by dept_id;
+
+/* 仮想テーブルの作成 */
+select 'Small Fry' name, 0 low_limit, 4999.99 high_limit
+union all
+select 'Average Joes' name, 5000 low_limit, 9999.99 high_limit
+union all
+select 'Heavy Hitters' name, 10000 low_limit, 9999999.99 high_limit;
+
+/* 顧客グループの生成するためのクエリのfromに仮想テーブルを追加 */
+# [TODO] 動かないので動かす
+select groups.name, count(*) num_customers
+from (select sum(a.avail_balance) cust_balance
+from account a inner join product p
+on a.product_cd = p.product_cd
+where p.product_type_cd = 'ACCOUNT'
+group by a.cust_id) cust_rollup inner join
+(select 'Small Fry' name, 0 low_limit, 4999.99 high_limit
+union all
+select 'Average Joes' name, 5000 low_limit, 9999.99 high_limit
+union all
+select 'Heavy Hitters' name, 10000 low_limit, 9999999.99 high_limit) groups
+on cust_rollup.cust_balance
+between groups.low_limit and groups.high_limit
+group by groups.name;
+
+/* サブクエリを使わないのっぺり(最後に group by) */
+select p.name product, b.name branch,
+concat(e.fname, ' ', e.lname) name,
+sum(a.avail_balance) tot_deposits
+from account a inner join employee e
+on a.open_emp_id = e.emp_id
+inner join branch b
+on a.open_branch_id = b.branch_id
+inner join product p
+on a.product_cd = p.product_cd
+where product_type_cd = 'ACCOUNT'
+group by p.name, b.name, e.fname, e.lname;
+
+/* サブクエリを使った立体的クエリ(group byをさきにやる) */
+select p.name product, b.name branch,
+concat(e.fname, ' ', e.lname) name,
+account_groups.tot_deposits
+from
+(select product_cd, open_branch_id branch_id,
+open_emp_id emp_id,
+sum(avail_balance) tot_deposits
+from account
+group by product_cd, open_branch_id, open_emp_id) account_groups
+inner join employee e on e.emp_id = account_groups.emp_id
+inner join branch b on b.branch_id = account_groups.branch_id
+inner join product p on p.product_cd = account_groups.product_cd
+where p.product_type_cd = 'ACCOUNT';
+
+/* サブクエリだけ抜き出したもの(ここですでにgroup by している) */
+select product_cd, open_branch_id branch_id, open_emp_id emp_id,
+sum(avail_balance) tot_deposits
+from account
+group by product_cd, open_branch_id, open_emp_id;
+
+/* フィルタ条件のサブクエリ */
+select open_emp_id, count(*) how_many
+from account
+group by open_emp_id
+having count(*) = (select max(emp_cnt.how_many) -- 最大と一致したレコードを表示
+from (select count(*) how_many
+from account
+group by open_emp_id) emp_cnt);
+
+/* 式ジェネレータとしてのサブクエリ */
+select
+(select p.name from product p
+where p.product_cd = a.product_cd
+and p.product_type_cd = 'ACCOUNT') product,
+(select b.name from branch b
+where b.branch_id = a.open_branch_id) branch,
+(select concat(e.fname, ' ', e.lname) from employee e
+where e.emp_id = a.open_emp_id) name,
+sum(a.avail_balance) tot_deposits
+from account a
+group by a.product_cd, a.open_branch_id, a.open_emp_id;
+
+/* 上の結果クエリから null を除去 */
+select all_prods.product, all_prods.branch,
+all_prods.name, all_prods.tot_deposits
+from
+(select
+  (select p.name from product p
+    where p.product_cd = a.product_cd
+    and p.product_type_cd = 'ACCOUNT') product,
+  (select b.name from branch b
+    where b.branch_id = a.open_branch_id) branch,
+  (select concat(e.fname, ' ', e.lname) from employee e
+    where e.emp_id = a.open_emp_id) name,
+  sum(a.avail_balance) tot_deposits
+    from account a
+    group by a.product_cd, a.open_branch_id, a.open_emp_id) all_prods
+where all_prods.product is not null;
+
+/* スカラーサブクエリは order by 節でも使用可能 */
+select emp.emp_id, concat(emp.fname, ' ', emp.lname) emp_name,
+(select concat(boss.fname, ' ', boss.lname)
+  from employee boss
+  where boss.emp_id = emp.superior_emp_id) boss_name
+from employee emp
+where emp.superior_emp_id is not null
+order by (select boss.lname from employee boss
+  where boss.emp_id = emp.superior_emp_id), emp.lname;
+
+/* insert */
+insert into account
+(account_id, product_cd, cust_id, open_date, last_activity_date,
+  status, open_branch_id, open_emp_id, avail_balance, pending_balance)
+values (null,
+  (select product_cd from product where name = 'savings account'),
+  (select cust_id from customer where fed_id = '555-55-5555'),
+  '2005-01-25', '2005-01-25', 'ACTIVE',
+  (select branch_id from branch where name = 'Quincy Bnrach'),
+  (select emp_id from employee where lname = 'Portman' and fname = 'Frank'),
+  0, 0);
