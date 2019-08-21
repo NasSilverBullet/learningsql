@@ -13,7 +13,7 @@ text_fld text
 
 ## 文字列の生成
 insert into string_tbl (char_fld, vchar_fld, text_fld)
-values ('This is char  data',
+values ('This is char data',
 'This is varchar data',
 'This is text data');
 
