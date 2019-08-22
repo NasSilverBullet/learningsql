@@ -27,7 +27,7 @@ where account_id = 29;
 /* 1 : 1 のサブクエリ使用パターン */
 select account_id, product_cd, cust_id, avail_balance
 from account
-where open_emp_id <> (select e.emp_id
+where open_emp_id <> (select e.emp_id -- != でもいける
 from employee e inner join branch b
 on e.assigned_branch_id = b.branch_id
 where e.title = 'Head Teller' and b.city = 'Woburn');
@@ -215,16 +215,19 @@ select 'Heavy Hitters' name, 10000 low_limit, 9999999.99 high_limit;
 /* 顧客グループの生成するためのクエリのfromに仮想テーブルを追加 */
 # [TODO] 動かないので動かす
 select groups.name, count(*) num_customers
-from (select sum(a.avail_balance) cust_balance
+from
+(select sum(a.avail_balance) cust_balance
 from account a inner join product p
 on a.product_cd = p.product_cd
 where p.product_type_cd = 'ACCOUNT'
 group by a.cust_id) cust_rollup inner join
 (select 'Small Fry' name, 0 low_limit, 4999.99 high_limit
 union all
-select 'Average Joes' name, 5000 low_limit, 9999.99 high_limit
+select 'Average Joes' name, 5000 low_limit,
+9999.99 high_limit
 union all
-select 'Heavy Hitters' name, 10000 low_limit, 9999999.99 high_limit) groups
+select 'Heavy Hitters' name, 10000 low_limit,
+9999999.99 high_limit) groups
 on cust_rollup.cust_balance
 between groups.low_limit and groups.high_limit
 group by groups.name;
